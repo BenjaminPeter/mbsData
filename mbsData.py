@@ -1591,6 +1591,7 @@ class mbsData:
             if buf[0:8]=="segsites":
                 buf=buf.split()
                 self.nSegsites=int(float(buf[1]))
+                print self.nSegsites
                 break
             if buf == '':
                 raise ValueError("could not read input file: number of\
@@ -1613,6 +1614,7 @@ class mbsData:
 
             buf = buf.strip()
             s = [int(buf[i]) for i in range(len(buf))]
+            print len(s)
             self.data[c,:]=s
             c=c+1
 
