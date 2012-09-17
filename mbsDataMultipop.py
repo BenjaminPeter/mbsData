@@ -49,6 +49,12 @@ class mbsDataMP(mbsData):
         return statMat
 
         
+    def readSNPSimple(self,file,sampSize):
+        self.data=np.loadtxt(file,dtype="i4")
+        self.ss=np.zeros(self.data.shape[1],dtype="i4")+sampSize
+        self.nSegsites=self.data.shape[0]
+        self.setActivePops([0,1])
+        self.segSites=range(self.nSegsites)
     def readHGDP(self,f1="/data/surfing/applications/hgdp/metric/daf_cnt.txt",
                 f2="/data/surfing/applications/hgdp/metric/popSS.txt"):
         self.data=np.loadtxt(f1,dtype="i4",skiprows=000000)
@@ -78,7 +84,8 @@ class mbsDataMP(mbsData):
             self.createMultiDimSFS(resample=resample)
         if hasattr(self,"sets"):
             tmpSets=self.sets
-            self.sets=self.blocks
+            if hasattr(self,"blocks"):
+                self.sets=self.blocks
             self.createMDSFSForSets()
             for i in range(len(self.setMDSFS)):
                 self.setMDSFS[i]=self.mdsfs-self.setMDSFS[i]
@@ -87,7 +94,7 @@ class mbsDataMP(mbsData):
             self.n1 = min(self.n1,self.n2)
             self.n2 = self.n1
 
-    def createMultiDimSFS(self,resample=False):
+    def createMultiDimSFS(self,folded=False,resample=False):
         self.mdfreq=np.transpose(self.data[:,(self.activePops)])
         if resample and self.n1 != self.n2:
             if self.n1>self.n2:
@@ -127,9 +134,9 @@ class mbsDataMP(mbsData):
         for i in range(self.nSegsites):
             snp=self.getDataFromId(id=i)
             if folded:
-                if sum(snp)>sum(1-snp):
+                if sum(snp)>sum(self.n1-snp):
 #                    print "inverted:[%d -> %d]"%(sum(snp),sum(1-snp))
-                    snp=1-snp
+                    snp=self.n1-snp
             for j in range(self.nPops):
                 #print i,j,snp
                 mdfreq[j,i]=sum(snp[self.pops[j]])
@@ -248,8 +255,13 @@ class mbsDataMP(mbsData):
         return self._getSurfStatForSets(1,0,((1.+n2)/(n1*n2),(n1+1.)/(n1*n2)),verbose=verbose)
 
     def getDeltaH(self):
-        h1=self.getH(individuals=self.pops[0])
-        h2=self.getH(individuals=self.pops[1])        
+        sfs1,sfs2,S1,S2=self.create1dsfsFrom2dsfs(self.mdsfs,
+                                                  self.n1,
+                                                  self.n2)
+        h1=self._getPi(sfs1,self.n1)/S1
+        h2=self._getPi(sfs2,self.n2)/S2
+        #h1=self.getH(individuals=self.pops[0])
+        #h2=self.getH(individuals=self.pops[1])        
         return h2-h1
     def create1dsfsFrom2dsfs(self,sfs,n1,n2):
         sfs1=np.zeros(n1+1,dtype="i4")
@@ -288,11 +300,13 @@ class mbsDataMP(mbsData):
         return np.array(deltaH)
 
     def getFST(self):
-        fst=0.0
+        num,denom = 0.0, 0.0
         for i in range(self.n1+1):
             for j in range(self.n2+1):
-                fst += self.mdsfs[i,j]*self.getFST1Locus(float(i)/self.n1,float(j)/self.n2,self.n1/2.,self.n2/2.)
-        return fst/self.nSegsites
+                x= self.mdsfs[i,j]*self.getFST1Locus(float(i)/self.n1,float(j)/self.n2,self.n1/2.,self.n2/2.)
+                num+=x[0]
+                denom+=x[1]
+        return num/denom 
 
     def getFST1Locus(self,p1,p2,n1,n2):
         alpha1 = 2. * p1 - 2. * p1 * p1
@@ -301,16 +315,18 @@ class mbsDataMP(mbsData):
         denom = (p1 -p2)**2 + (4.0*n1*n2-n1-n2)*(n1*alpha1 + n2 * alpha2)/(4.*n1*n2*(n1+n2-1.))
         if denom == 0:
             return 0.0
-        return num/denom
+        return num,denom
         
     def getFSTForSets(self):
         fst=[]
         for sfs in self.setMDSFS:
-            fst_i=0
+            num_i,denom_i=0.,0.
             for i in range(self.n1+1):
                 for j in range(self.n2+1):
-                    fst_i+=sfs[i,j]*self.getFST1Locus(float(i)/self.n1,float(j)/self.n2,self.n1/2.,self.n2/2.)
-            fst.append(fst_i/sum(sum(sfs)))
+                    x=sfs[i,j]*self.getFST1Locus(float(i)/self.n1,float(j)/self.n2,self.n1/2.,self.n2/2.)
+                    num_i+=x[0]
+                    denom_i+=x[1]
+            fst.append(num_i/denom_i)
         return fst
     
     def getFSTSimple(self):
@@ -429,13 +445,23 @@ class mbsDataMP(mbsData):
             self.setSFS.insert(0,self.mdsfs)
         self.setMDSFS=np.array(self.setMDSFS)
 
+    def getDataFromId(self,id,individuals=None):
+        """individuals nyi"""
+        #if individuals!=None:
+        #    print "individuals nyi"
+        #    raise ArgumentError("")
+        n=self.n1+self.n2
+        p1,p2=self.activePops
+        d=self.data[id,p1]+self.data[id,p2]
+        return np.array([1 for i in xrange(d)]+
+                        [0 for i in xrange(n)])
     def createSFSForSets(self):
         self.setSFS=[]
         for s in self.sets:
             condFreq=self.mdfreq[:,s]
             sfs=[np.zeros(len(self.pops[0])+1),
                  np.zeros(len(self.pops[1])+1),
-                 np.zeros(self.nHap)
+                 np.zeros(self.nHap+1)
                 ]
             for i in np.arange(condFreq.shape[1]):
                 sfs[0][condFreq[0,i]]+=1
