@@ -11,7 +11,7 @@ class mbsDataMPSSS(mbsDataMP):
         2. Frequency tables, ending *.ft
             each row of a FT is a tree segment, giving the lenght of the tree segment followed by the (absolute) allele frequency in each population. Sample Sizes have to be given externally...
         3. output of statistics, ending *.stat
-            gives popid1, popid2 FST sdFST, psi sdpsi, deltaH, sddeltahfor all pairwise comparisons
+            gives popid1, popid2 FST sdFST, #psi sdpsi, deltaH, sddeltahfor all pairwise comparisons
 
 10.9.2012: currently solely working on FT
     """
@@ -62,7 +62,7 @@ class mbsDataMPSSS(mbsDataMP):
             self.n2 = self.n1
 #--------------------------------------------------
     def createMultiDimSFS(self,resample=False):
-        """creates 2dsfs, override"""
+        """creates 2dsfs for 2 populations, if resample is set to true, the larger population will be downsampled so that sample sizes are equal, override"""
         self.mdfreq=np.transpose(self.data[:,(self.activePops)])
         if resample and self.n1 != self.n2:
             if self.n1>self.n2:
@@ -100,6 +100,76 @@ class mbsDataMPSSS(mbsDataMP):
         #self.mdsfs=mdsfs/self.totNAlleles
         return mdsfs
 #--------------------------------------------------
+    def createMultiDimSFSFolded(self,resample=False):
+        """creates 2dsfs for 2 populations, if resample is set to true, the larger population will be downsampled so that sample sizes are equal, override"""
+        self.mdfreq=np.transpose(self.data[:,(self.activePops)])
+        if resample and self.n1 != self.n2:
+            if self.n1>self.n2:
+                self.mdfreq[0]=[np.random.binomial(self.n2,float(f)/self.n1) \
+                                for f in self.mdfreq[0]]
+            else:
+                self.mdfreq[1]=[np.random.binomial(self.n1,float(f)/self.n2) \
+                                for f in self.mdfreq[1]]
+
+        mdsfs=np.zeros((self.ss[self.activePops[0]]+1,\
+                        self.ss[self.activePops[1]]+1),\
+                        dtype="f4")
+
+        shared=0.
+        private1=0.
+        private2=0.
+        for i in range(self.nSegsites):
+            mdsfs[tuple(self.mdfreq[:,i])]+=self.dataFreq[i]
+            if len(mdsfs.shape)==2:
+                if self.mdfreq[0,i]>0 and self.mdfreq[1,i]>0:
+                    shared+=self.dataFreq[i]
+                elif self.mdfreq[0,i]>0:
+                    private1+=self.dataFreq[i]
+                elif self.mdfreq[1,i]>0:
+                    private2+=self.dataFreq[i]
+                else:
+                    pass
+                    #print self.mdfreq[:,i],
+                    #print "ERROR: neither private nor shared "
+
+        self.totNAlleles=sum(sum(mdsfs))
+        #self.shared=shared/self.totNAlleles
+        #self.private=(private1/self.totNAlleles,private2/self.totNAlleles)
+        #self.mdsfs=mdsfs/self.totNAlleles
+        return mdsfs
+#--------------------------------------------------
 
 
+    def createMDSFSForSets(self,folded=False):
+        self.setMDSFS=[]
+        for s in self.sets:
+            sfs=np.zeros((self.n1+1,self.n2+1),dtype="int")
+            for i in range(self.nSegSites):
+                if i in s:
+                    sfs[tuple(self.mdfreq[:,i])]+=self.dataFreq[i]
+            self.setMDSFS.append(sfs)
+        if self.setsIncludeGlobal:
+            self.setSFS.insert(0,self.mdsfs)
+        self.setMDSFS=np.array(self.setMDSFS)
 
+    def createSFSForSets(self):
+        self.setSFS=[]
+        for s in self.sets:
+            sfs=[np.zeros(self.n1+1),
+                 np.zeros(self.n2+1)
+                 np.zeros(self.nHap)]
+            for i in np.arange(self.nSegSites):
+                if i in s:
+                    sfs[0][self.mdfreq[0,i]]+=self.dataFreq[i]
+                    sfs[1][self.mdfreq[0,i]]+=self.dataFreq[i]
+                    sfs[2][sum(self.mdfreq[:,i]])+=self.dataFreq[i]
+            self.setSFS.append(sfs)
+        if self.setsIncludeGlobal:
+            sfs=[np.zeros(self.n1+1),
+                 np.zeros(self.n2+1)
+                 np.zeros(self.nHap)]
+            for i in np.arange(self.nSegSites):
+                sfs[0][self.mdfreq[0,i]]+=self.dataFreq[i]
+                sfs[1][self.mdfreq[0,i]]+=self.dataFreq[i]
+                sfs[2][sum(self.mdfreq[:,i]])+=self.dataFreq[i]
+            self.setSFS.append(sfs)
