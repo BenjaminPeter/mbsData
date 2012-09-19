@@ -1,11 +1,11 @@
 #!/usr/bin/python
 
-from mbsData import mbsData
+from mbsData2pop import mbsData2P
 import numpy as np
-import os
+import itertools
 import numpy.random as rng
 
-class mbsDataMP(mbsData):
+class mbsDataMP(mbsData2P):
     def __init__(self):
         self.nPops=1
         self.pops       =   None
@@ -31,6 +31,20 @@ class mbsDataMP(mbsData):
         self.nPops=len(self.ss)
 
         data=self.data
+        self.data=np.empty((self.nPops,self.nSegsites))
+        cummulativePos=0
+        for i,popSize in enumerate(self.ss):
+            self.data[i]    =   sum(data[range(cummulativePos,
+                                               cummulativePos+popSize)])
+            cummulativePos+=popSize
+        self.data=np.transpose(self.data)
+
+    def readFSC(self,file="bla/bla_1_1.arp"):
+        self.readArpFileFSC(file)
+        self.pos=np.array([(0,self.sampleId[i].split()[1]) for i in
+                           range(len(self.sampleId))])
+        data=self.data
+        self.nPops=len(self.ss)
         self.data=np.empty((self.nPops,self.nSegsites))
         cummulativePos=0
         for i,popSize in enumerate(self.ss):
@@ -575,3 +589,246 @@ class mbsDataMP(mbsData):
         maxPos=np.where(ll==np.max(ll))
         print maxPos
         return p3[maxPos[1]]
+#------------------------------------------------
+    def readArpFileFSC(self,file="sGeneticsOutput/_spc_samp_1.arp"):
+        f       =   open(file)
+        line    =   f.readline()
+        data    =   []
+        sampleId=[]
+        ss=[]
+        while (line !=""):
+            if line[0]=="\n" or line[0]=="#":
+                line=f.readline()
+                continue
+            if "SampleName" in line:
+                sampleId.append(line.split("\"")[1])
+            if "SampleData" in line:
+                for i in range(curSS/2):
+                    for j in range(2):
+                        line=f.readline()
+                        data.append(line.split()[2:])
+            if "SampleSize" in line:
+                curSS=int(line.split("=")[1])
+                ss.append(int(line.split("=")[1]))
+            line=f.readline()
+        f.close()
+
+        self.data=np.array(data,dtype="i")
+        self.data[self.data==2]=0
+        self.nHap,self.nSegsites=self.data.shape
+        self.sampleId=sampleId
+        self.ss=np.array(ss,dtype="i")
+        
+################################################
+###   Estimation linear
+###############################################
+    def HB3Points(self,p,m):
+        a = (p[1,0] - p[0, 0]) * m[1] - (p[2, 0] - p[0, 0]) *m[0];
+        b = (p[1,1] - p[0, 1]) * m[1] - (p[2, 1] - p[0, 1]) *m[0];
+        c = 1./2 * (m[0] * (m[1]**2 + p[0, 0]**2 - p[2, 0]**2 + p[0,1]**2 -
+           p[2, 1]**2) -  m[1] *(m[0]**2 + p[0,0]**2 - p[1, 0]**2 + p[0,1]**2 -
+           p[1, 1]**2))
+        return(a,b,c)
+#------------------------------------------------
+    def LeastSquaresPos(self,p,m,threshold=.51):
+        sets=set(itertools.combinations(range(len(p)),3))
+        x=[];pts=[]
+        i=0
+        for s in sets:
+            i+=1
+            mTmp=[m[s[0],s[1]],m[s[0],s[2]],m[s[1],s[2]]]
+            if np.max(np.abs(mTmp))<threshold:
+                if np.all(np.isfinite(mTmp)):
+                    pts.append(p[s,:])
+                    x.append(self.HB3Points(p[s,:],mTmp))
+        x=np.array(x)
+
+        return np.linalg.lstsq(x[:,0:2],x[:,2])[0],x,pts
+#------------------------------------------------        
+    def dist(self,p,q):
+        return(np.sqrt((p[0]-q[0])**2+(p[1]-q[1])**2))
+
+
+#####################################################
+### Estimation using scipy.optimize.linsq
+####################################################
+    def getLeastSqEstimate(self,statMat,pos=None):
+        if pos==None: pos=self.pos
+        import scipy.optimize as so
+        def jacobian(p,par):
+            x,y,k   =   p
+            F1      =   par[0:2]
+            F2      =   par[2:4]
+            D       =   par[4]
+            D1=self.dist((x,y),F1)
+            D2=self.dist((x,y),F2)
+            dfdx= 2*(  (x-F1[0])/D1  +(F2[0]-x)/D2)  *(-D*k+D1-D2)
+            dfdy= 2*(  (y-F1[1])/D1  +(F2[1]-y)/D2)  *(-D*k+D1-D2)    
+            dfdk= 2*D*(D*k-D1+D2)
+            return dfdx,dfdy,dfdk
+
+        def getSummand(p,par):   
+            F1      =   par[0:2]
+            F2      =   par[2:4]
+            D       =   par[4]
+            return (self.dist((p[0],p[1]),F1)-self.dist((p[0],p[1]),F2)-p[2]*D)**2
+        
+        a=[]
+        for i in range(len(pos)-1):
+            for j in range(i+1,len(pos)):
+                a.append([pos[i][0],pos[i][1],pos[j][0],pos[j][1],statMat[j,i]])    
+        est=so.leastsq(getSummand,(50,50,1),args=(np.transpose(a)),
+                          Dfun=jacobian, col_deriv=True,full_output=True)
+        self.scalingParLSQ=est[0][2]
+        self.xEst,self.yEst=est[0][0],est[0][1]
+        self.dataList=np.array(a)
+        
+        deviation=[]
+        for line in self.dataList:
+            deviation.append(getSummand((self.xEst,self.yEst,self.scalingParLSQ),
+                                         line))
+        
+        
+        return est[0],deviation
+        
+#####################################################
+### Estimation taking into account standard errors
+####################################################
+    def getLeastSqEstimateSE(self,statMat,statMatJK,pos=None,startPar=(50,50,1)):
+        if pos==None: pos=self.pos
+        import scipy.optimize as so
+        def jacobian(p,par):
+            x,y,k   =   p
+            F1      =   par[0:2]
+            F2      =   par[2:4]
+            D       =   par[4]
+            sigma   =   par[5]
+            
+            D1=self.dist((x,y),F1)
+            D2=self.dist((x,y),F2)
+            
+            
+            dfdx= 2*( D1-D2-D*k)  *  (  (x-F1[0])/D1  +(F2[0]-x)/D2  ) / k/k/sigma/sigma
+            dfdy= 2*( D1-D2-D*k)  *  (  (y-F1[1])/D1  +(F2[1]-y)/D2  ) / k/k/sigma/sigma
+            dfdk= 2*( D1-D2) *(D2-D1+D*k) /k/k/k/sigma/sigma
+            return dfdx,dfdy,dfdk
+
+        def getSummand(p,par):   
+            F1      =   par[0:2]
+            F2      =   par[2:4]
+            D       =   par[4]
+            sigma   =   par[5]            
+            x,y,k   =   p
+            D1,D2   =   self.dist((x,y),F1),self.dist((x,y),F2) 
+            return (  (D1-D2-k*D  )   /   (k*sigma)     )**2
+        
+        a=[]
+        for i in range(len(pos)-1):
+            for j in range(i+1,len(pos)):
+                a.append([pos[i][0],pos[i][1],pos[j][0],pos[j][1],statMat[j,i],statMatJK[j,i]])    
+        est=so.leastsq(getSummand,startPar,args=(np.transpose(a)),
+                          Dfun=jacobian, col_deriv=True,full_output=True)
+        print est
+        self.scalingParLSQ=est[0][2]
+        self.xEst,self.yEst=est[0][0],est[0][1]
+        self.dataList=np.array(a)
+        
+        deviation=[]
+        for line in self.dataList:
+            deviation.append(getSummand((self.xEst,self.yEst,self.scalingParLSQ),
+                                         line))
+        
+        
+        return est[0],deviation
+ ##############################################
+ #fixed k
+ ##############################################       
+    def getLeastSqEstimateFixedK(self,statMat,statMatJK,k,pos=None,startPar=(50,50)):
+        if pos==None: pos=self.pos
+        import scipy.optimize as so
+        def jacobian(p,par):
+            x,y   =   p
+            F1      =   par[0:2]
+            F2      =   par[2:4]
+            D       =   par[4]
+            sigma   =   par[5]
+            k       =   par[6]
+            
+            D1=self.dist((x,y),F1)
+            D2=self.dist((x,y),F2)
+            
+            
+            dfdx= 2*( D1-D2-D*k)  *  (  (x-F1[0])/D1  +(F2[0]-x)/D2  ) / sigma/sigma/k/k
+            dfdy= 2*( D1-D2-D*k)  *  (  (y-F1[1])/D1  +(F2[1]-y)/D2  ) / sigma/sigma/k/k
+            return dfdx,dfdy
+
+        def getSummand(p,par):   
+            F1      =   par[0:2]
+            F2      =   par[2:4]
+            D       =   par[4]
+            sigma   =   par[5]         
+            k       =   par[6]   
+            x,y   =   p
+            D1,D2   =   self.dist((x,y),F1),self.dist((x,y),F2) 
+            return (  (D1-D2-D*k  )   /   sigma/k     )**2
+        
+        a=[]
+        for i in range(len(pos)-1):
+            for j in range(i+1,len(pos)):
+                a.append([pos[i][0],pos[i][1],pos[j][0],pos[j][1],statMat[j,i],statMatJK[j,i],k])    
+        est=so.leastsq(getSummand,startPar,args=(np.transpose(a)),
+                          Dfun=jacobian, col_deriv=True,full_output=True)
+        print est
+        self.scalingParLSQ=1#est[0][2]
+        self.xEst,self.yEst=est[0][0],est[0][1]
+        self.dataList=np.array(a)
+        
+        deviation=[]
+        for line in self.dataList:
+            deviation.append(getSummand((self.xEst,self.yEst),
+                                         line))
+        
+        
+        return est[0],deviation               
+#####################################################
+
+    def Dmat(self,O=(40,60)):
+        lp=len(self.pos)
+        dMat=np.zeros((lp,lp))
+        for i in range(lp):
+            for j in range(lp):
+                dMat[i,j]=self.dist(self.pos[i],O)-self.dist(self.pos[j],O)
+        return dMat    
+
+#####################################################
+###    plotting
+#####################################################                          
+    def plotHyperbolas(self,plotList=range(4),nPts=500,xlim=(0,100),ylim=(0,100),O=None):
+        if not hasattr(self,"dataList"):
+            raise ValueError("run getLeastSqEstiamte first")
+        import matplotlib.pyplot as plt
+        def mkHyperbola(F1,F2,D):
+            return lambda x,y: (self.dist((x,y),F1)-self.dist((x,y),F2)-D)
+        def plotHyperbolaWithFoci(F1,F2,D,nPts=nPts,xlim=xlim,ylim=ylim,O=O):
+            xmin,xmax=xlim
+            ymin,ymax=ylim
+            hyperbola=mkHyperbola(F1,F2,D)
+            A=np.linspace(xmin,xmax,nPts)
+            B=np.linspace(ymin,ymax,nPts)
+            X,Y=np.meshgrid(A,B)
+            print "XX:",F1,F2,D
+            hp=hyperbola(X,Y)
+            if not abs(D)>self.dist(F1,F2):
+                plt.contour(X, Y, hyperbola(X,Y), 0, zdir='z')
+            plt.plot([F1[0],F2[0]],[F1[1],F2[1]],"bo")
+            if O!=None:
+                plt.plot([O[0]],[O[1]],"go")
+        
+        for i in plotList:
+            #plt.plot([self.xEst],[self.yEst],"ro")
+            if i==len(self.dataList):
+                break
+            a=self.dataList; k=self.scalingParLSQ
+            plotHyperbolaWithFoci(a[i,0:2],a[i,2:4],k*a[i,4],O=O);
+
+        plt.show()
