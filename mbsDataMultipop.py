@@ -38,7 +38,7 @@ class mbsDataMP(mbsData2P):
                                                cummulativePos+popSize)])
             cummulativePos+=popSize
         self.data=np.transpose(self.data)
-
+#------------------------------------------------
     def readFSC(self,file="bla/bla_1_1.arp"):
         self.readArpFileFSC(file)
         self.pos=np.array([(0,self.sampleId[i].split()[1]) for i in
@@ -61,8 +61,42 @@ class mbsDataMP(mbsData2P):
                 self.setActivePops((i,j))
                 statMat[i,j]=stat()
         return statMat
-
-        
+#------------------------------------------------        
+    def getPairwiseStatWithJK(self,stat,setStat,nBins=50):
+        statMat=np.empty((self.nPops,self.nPops))
+        statMatJK=np.empty((nBins,self.nPops,self.nPops))
+        for i in range(self.nPops):
+            for j in range(self.nPops):
+                self.setActivePops((i,j))
+                self.makeBlockJKSets()
+                statMat[i,j]=stat()
+                statMatJK[:,i,j]=setStat()
+                #print self.setMDSFS
+        return statMat,statMatJK     
+#------------------------------------------------
+    def getPairwiseStatBlockJK(self,stat):
+        statMat     =   np.empty((self.nPops,self.nPops))   
+        for i in range(self.nPops):
+            for j in range(self.nPops):
+                self.setActivePops((i,j))
+                self.makeBlockJKSets()                
+                statMat[i,j]=self.getBlockJKStandardError(stat)
+        return statMat
+#------------------------------------------------        
+    def readHGDP(self):
+        self.data=np.loadtxt("daf_cnt.txt",dtype="i4",skiprows=000000)
+        self.popData=np.loadtxt("popSS.txt",dtype="S")
+        self.ss=2*np.array([int(i) for i in self.popData[:,1]])
+        self.nSegsites=self.data.shape[0]
+        self.setActivePops([0,1])
+        self.nPops=len(self.popData)
+#------------------------------------------------
+    def readHenn(self):
+        self.data=np.loadtxt("freqs.txt",dtype="i4")
+        self.ss=np.zeros(30,dtype="i4")+16
+        self.nSegsites=self.data.shape[0]
+        self.setActivePops([0,1])
+#------------------------------------------------
     def readSNPSimple(self,file,sampSize):
         self.data=np.loadtxt(file,dtype="i4")
         self.ss=np.zeros(self.data.shape[1],dtype="i4")+sampSize
@@ -790,6 +824,66 @@ class mbsDataMP(mbsData2P):
         
         
         return est[0],deviation               
+##############################################
+#           Zheng et al. 2007 algorithm
+############################################## 
+    def zheng(self,statMat,pos,f=0): #f is the focal deme
+        nEq=statMat.shape[0]-1
+        A=np.empty((nEq,4))
+        b=np.empty(nEq)
+        measures,xCoords,yCoords=np.empty(nEq),np.empty(nEq),np.empty(nEq)
+        
+        xf,yf=pos[f]
+        measures[:f]=statMat[f,:f]
+        measures[f:]=statMat[f,(f+1):]
+        xCoords[:f]=pos[:f,0]; xCoords[f:]=pos[(f+1):,0]
+        yCoords[:f]=pos[:f,1]; yCoords[f:]=pos[(f+1):,1]        
+        
+        #get A,b in eq 4 of Zheng et al.
+        A[:,0]=2*xCoords-xf
+        A[:,1]=2*yCoords-yf
+        A[:,2]=measures**2
+        A[:,3]=2*measures
+        
+        b=xCoords**2-xf**2+yCoords**2-yf**2
+        theta1 = np.linalg.lstsq(A,b)[0]
+        xHat1,yHat1,vHat1,uHat1=theta1
+        
+                
+        D   =   np.mat(measures).T
+        d   =   np.sqrt( (xCoords-xHat1)**2 +  (yCoords-yHat1)**2)
+        d   -=  np.sqrt((xf-xHat1)**2+(yf-yHat1)**2)
+        d   =   np.mat(d).T
+        vHat    =   np.array(((D.T*d)/(D.T*D))**2)[0,0]
+        uHat=np.array(np.sqrt(vHat*((xf-xHat1)**2+(yf-yHat1)**2)))
+        Q=np.diag(np.ones(nEq))+1
+        B2=np.diag(np.array(uHat+vHat*measures))
+        Temp2=4*np.mat(B2)*np.mat(Q)*np.mat(B2)
+        
+        theta2= np.array((A.T*Temp2.I*A).I*A.T*Temp2.I*np.mat(b).T)[:,0]
+        xHat2,yHat2,vHat2,uHat2=theta2
+        
+                
+        H=np.zeros((4,4)); H[0,0]=1; H[1,1]=1; H[2,2]=1;
+        H[3,0]=vHat2; H[3,1]=vHat2;
+        p=np.array([(xHat2-xf)**2,(yHat2-yf)**2,vHat2,uHat2**2])
+        p=np.mat(p).T
+        covMat=(A.T*Temp2.I*A).I
+
+        B3      =np.mat(np.diag(np.array([ 2*(xHat2-xf), 2*(yHat2-yf), 1 , 2*uHat2 ])))  
+        G=np.zeros((4,4))
+        
+        r=(xHat1-xf)**2+(yHat1-yf)**2
+        G[:,3]=[-2*r*(xHat2-xf)*covMat[0,2],-2*r*(yHat2-yf)*covMat[1,2],-r*covMat[2,2],r*r*covMat[2,2]-4*uHat2*r*covMat[2,3]]
+
+        Temp3   =B3*covMat*B3+G
+        
+        theta3=(H.T*Temp3.I*H).I*H.T*Temp3.I*p
+        
+        return theta1,theta2,theta3
+
+        
+    
 #####################################################
 
     def Dmat(self,O=(40,60)):
