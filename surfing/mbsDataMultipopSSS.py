@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-from mbsData import mbsData
-from mbsDataMultipop import mbsDataMP
+from ../core/mbsData import mbsData
+from ../core/mbsDataMP import mbsDataMP
 import numpy as np
 
 class mbsDataMPSSS(mbsDataMP):

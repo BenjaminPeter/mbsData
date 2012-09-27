@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-from mbsData import mbsData
-from mbsData2pop import mbsData2P
+from ../core/mbsData import mbsData
+from ../core/mbsData2P import mbsData2P
 
 class mbsData2PSSS(mbsData2P):
     """this should allow usage of the standard mbsData function using the output from the SSSimulator. Currently, data comes in the following form:

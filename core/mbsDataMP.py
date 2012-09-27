@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-from mbsData2pop import mbsData2P
+from mbsData2P import mbsData2P
 import numpy as np
 import itertools
 import numpy.random as rng
