@@ -888,7 +888,9 @@ class mbsData:
         H/=len(interval)
         return H
         
-    def getHFromSNP(self,id,individuals):
+    def getHFromSNP(self,id,individuals=None):
+        if individuals==None:
+            individuals = self.getIndividuals()
         SNP = self.getDataFromId(id,individuals)
         p =  float(sum(SNP))
         N = float(self.nHap)
@@ -1240,14 +1242,30 @@ class mbsData:
         return dMatrix
 
 #-----------------------------I/O----------------------------
-    def readVCFFile(self,file,panel,selPos,seqPos,polarizeFile="/data/selectiveSweep/data/ancestral/genes_HC.txt"):
+    def readVCFFile(self, file, panel, selPos, seqPos, 
+                    polarizeFile="/data/selectiveSweep/data/ancestral/genes_HC.txt",
+                    vcfHasAA=False):
+        """read vcf data into data structure; arguments:
+            file:       vcf file name
+            panel:      population to use, if it is a list, or np.array
+                        they will be used, otherwise determined from header
+            selPos:     position of the presumably selected site
+            seqPos:     start and ending position
+            polarizeFile: file with info on anc/der allele
+            vcfHasAA:   if Ancestral Allele is in VCF, this is used instead
+            """
         polarize=False
-        if polarizeFile != None:
-            pf=np.loadtxt(polarizeFile,dtype="S")
-            polarize=True
-        a=np.loadtxt("interim_phase1.20101123.ALL.panel",dtype="S")
-        toKeep=panel
-        individualIDs=[a[i,0]  for i in range(len(a[:,1])) if a[i,1] in toKeep]
+        if not vcfHasAA:
+            if polarizeFile != None:
+                pf=np.loadtxt(polarizeFile,dtype="S")
+                polarize=True
+        if type(panel) == list or type(panel) == np.ndarray:
+            individualIDs = panel
+        else:
+            a=np.loadtxt("interim_phase1.20101123.ALL.panel",dtype="S")
+            toKeep=panel
+            individualIDs=[a[i,0]  for i in range(len(a[:,1])) if a[i,1] in toKeep]
+        print individualIDs
 
         file= open(file,"r")
         line=file.readline()
@@ -1255,8 +1273,8 @@ class mbsData:
             header= line
             line=file.readline()
 
-        hd=header.split()
-        data=list()
+        hd = header.split()
+        data = list()
         individualsToKeep=[i for i in range(len(hd)) if np.array(hd)[i] in individualIDs]  
         ls=line.split()
         ht=np.array([ ht[0:3] for ht in np.array(ls)[individualsToKeep]])
@@ -1278,6 +1296,17 @@ class mbsData:
             snpmeta=ls[:9]
             snppos=ls[1]
             snpqual=ls[6]
+            if vcfHasAA:
+                moreData = ls[7].split( ";" )
+                mdd = dict( [l.split("=") for l in moreData] )
+                if   mdd["AA"].upper() == snpmeta[3]: #SNP is ancestral
+                    continue
+                elif mdd["AA"].upper() == snpmeta[4]: #SNP is derived
+                    snpdata = np.array(1 - np.array(snpdata,dtype="b"),
+                                       dtype="S1")
+                else:
+                    print snppos, mdd["AA"], snpmeta[3], snpmeta[4]
+                    #raise ValueError("SNP neither anc nor derived")
             snp=(snppos,snpqual,snpdata,snpmeta[0],snpmeta[3],snpmeta[4])
             data.append(snp)
 
@@ -1554,7 +1583,7 @@ class mbsData:
                 i+=1
 
 
-        
+
     def readMsFile(self,file):
         self.file = open(file)
         self.type = "ms"
