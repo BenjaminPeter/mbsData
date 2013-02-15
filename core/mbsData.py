@@ -371,6 +371,7 @@ class mbsData:
 
     def getIDfromPos(self,pos):
         if not hasattr(self,"SNPdict"):
+            print "made dict"
             self.createSNPdict()
         return self.SNPdict[pos]
 
@@ -1119,7 +1120,7 @@ class mbsData:
         pi=self.getPi(individuals=individuals,id=interval)
         thetaH=0.0
         l=len(individuals)
-        nnm1 = l/(l-1.0)
+        nnm1 = 1/l/(l-1.0)
 
         if type(interval)==np.ndarray:
             arr=interval
@@ -1244,7 +1245,7 @@ class mbsData:
 #-----------------------------I/O----------------------------
     def readVCFFile(self, file, panel, selPos, seqPos, 
                     polarizeFile="/data/selectiveSweep/data/ancestral/genes_HC.txt",
-                    vcfHasAA=False):
+                    vcfHasAA=False,excludeNonPolarizable=False):
         """read vcf data into data structure; arguments:
             file:       vcf file name
             panel:      population to use, if it is a list, or np.array
@@ -1285,7 +1286,7 @@ class mbsData:
         snp=(snppos,snpqual,snpdata,snpmeta[3],snpmeta[4])
 
         data.append(snp)
-
+        nSNPRemoved =0
         while True:
             line=file.readline()
             if not line:
@@ -1296,20 +1297,31 @@ class mbsData:
             snpmeta=ls[:9]
             snppos=ls[1]
             snpqual=ls[6]
+
             if vcfHasAA:
                 moreData = ls[7].split( ";" )
                 mdd = dict( [l.split("=") for l in moreData] )
-                if   mdd["AA"].upper() == snpmeta[3]: #SNP is ancestral
-                    continue
-                elif mdd["AA"].upper() == snpmeta[4]: #SNP is derived
+                if   mdd["AA"]         == snpmeta[3]: #SNP is ancestral
+                    pass
+                elif mdd["AA"]         == snpmeta[4]: #SNP is derived
+                    snpdata = np.array(1 - np.array(snpdata,dtype="b"),
+                                       dtype="S1")
+                elif mdd["AA"].upper() == snpmeta[3] and \
+                        (not excludeNonPolarizable):
+                    pass
+                elif mdd["AA"].upper() == snpmeta[4] and \
+                        (not excludeNonPolarizable):
                     snpdata = np.array(1 - np.array(snpdata,dtype="b"),
                                        dtype="S1")
                 else:
-                    print snppos, mdd["AA"], snpmeta[3], snpmeta[4]
+                    if excludeNonPolarizable:
+                        nSNPRemoved+=1
+                        continue
+                    #print snppos, mdd["AA"], snpmeta[3], snpmeta[4]
                     #raise ValueError("SNP neither anc nor derived")
             snp=(snppos,snpqual,snpdata,snpmeta[0],snpmeta[3],snpmeta[4])
             data.append(snp)
-
+        print "removed %d SNP"%nSNPRemoved
         if polarize:
             chr=snpmeta[0][0]
             #refAllele = [i[3] for i in snpmeta] 
