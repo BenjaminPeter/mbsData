@@ -819,7 +819,7 @@ class mbsData:
         return ihs,ihs_ancestral,ihs_derived,(amin,amax),(dmin,dmax)
 
     def getIHSExternal(self):
-        np.savetxt("segSites.txt",self.segSites,fmt="%i")
+        np.savetxt("segSites.txt",self.segSites,fmt="%f")
         np.savetxt("dump.txt",self.data,fmt="%i")
 
         s="./ihs3 segSites.txt dump.txt %i > temp.txt" %self.selId
@@ -2160,3 +2160,36 @@ class mbsData:
 
         self.data=np.array(data,dtype="i")
         self.nHap,self.nSegsites=self.data.shape
+
+
+    def addRecombinationMap(self,startPos=39586954,
+                             file="/data/selectiveSweep/IFNL/DATA/genetic_map_GRCh37_chr19.txt"):
+        """
+        calculates the position of each SNP on a recombination map. This is done
+        very lazily in an O(n*m) algorithm, where n is the number of map entries
+        and m is the number of SNP. Should be improved when this becomes time
+        critical
+        """
+        geneticMap=[]
+        f = open(file)
+        for line in f:
+            line = line.split()
+            curLine=[line[1],line[4]]
+            geneticMap.append(curLine)
+
+        geneticMap=np.array(geneticMap,dtype="f4")
+        
+        segSites_Rec=[]
+        for c,curPos_Physical in enumerate(self.segSites):
+            print c,"/",self.nSegsites
+            i=0
+            #lazily ignoring the case where the data extends over the chromosome
+            while curPos_Physical+startPos > geneticMap[i][0]:
+                i+=1
+            frac = (curPos_Physical+startPos - geneticMap[i-1][0]) / \
+                   (geneticMap[i][0] - geneticMap[i-1][0])
+            curPos_Rec = geneticMap[i-1] + frac * (geneticMap[i] - geneticMap[i-1])
+            segSites_Rec.append(curPos_Rec[1])
+            
+            
+
