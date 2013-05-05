@@ -826,12 +826,12 @@ class mbsData:
         #print s
         os.system(s)
 	try:
-            k=np.loadtxt("temp.txt")
+        k=np.loadtxt("temp.txt")
 	except IOError:
-            k=(np.nan,np.nan,np.nan)
-        if k[0] ==-1e13:
-            k=(np.nan,np.nan,np.nan)
-        return (k[2],k[1],k[0])
+        k=(np.nan,np.nan,np.nan)
+    if k[0] ==-1e13:
+        k=(np.nan,np.nan,np.nan)
+    return (k[2],k[1],k[0])
 
     def getXPEHH(self,x,pos=None,id=None,individuals=None,interpolation=False,verbose=False):
         pos,id,individuals = self._getDefault(pos,id,individuals,singleSite=True)
