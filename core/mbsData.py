@@ -1264,8 +1264,11 @@ class mbsData:
             individualIDs = panel
         else:
             a=np.loadtxt("interim_phase1.20101123.ALL.panel",dtype="S")
-            toKeep=panel
-            individualIDs=[a[i,0]  for i in range(len(a[:,1])) if a[i,1] in toKeep]
+            if panel == "ALL":
+                individualIDs=[a[i,0]  for i in range(len(a[:,1]))]
+            else:
+                toKeep=panel
+                individualIDs=[a[i,0]  for i in range(len(a[:,1])) if a[i,1] in toKeep]
         print individualIDs
 
         file= open(file,"r")
