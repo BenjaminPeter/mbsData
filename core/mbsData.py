@@ -1266,7 +1266,6 @@ class mbsData:
             a=np.loadtxt("interim_phase1.20101123.ALL.panel",dtype="S")
             toKeep=panel
             individualIDs=[a[i,0]  for i in range(len(a[:,1])) if a[i,1] in toKeep]
-        print individualIDs
 
         file= open(file,"r")
         line=file.readline()
@@ -1276,7 +1275,15 @@ class mbsData:
 
         hd = header.split()
         data = list()
-        individualsToKeep=[i for i in range(len(hd)) if np.array(hd)[i] in individualIDs]  
+        individualsToKeep=[]
+        for i,id in enumerate(individualIDs):
+            for j,id2 in enumerate(hd):
+                if id == id2:
+                    individualstoKeep.append(j)
+            
+
+        #individualsToKeep=[i for i in range(len(hd)) if np.array(hd)[i] in individualIDs]  
+        print individualsToKeep
         ls=line.split()
         ht=np.array([ ht[0:3] for ht in np.array(ls)[individualsToKeep]])
         snpdata=(np.array([i.split("|") for i in ht])).flatten()
