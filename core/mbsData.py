@@ -3,6 +3,7 @@ import numpy as np
 import fileinput
 import os
 
+"""test"""
 class mbsData:
     def __init__(self,file=None,verbose=False):
         """if file is given, it loads the file assuming mbs data"""
@@ -826,12 +827,12 @@ class mbsData:
         #print s
         os.system(s)
 	try:
-        k=np.loadtxt("temp.txt")
+            k=np.loadtxt("temp.txt")
 	except IOError:
-        k=(np.nan,np.nan,np.nan)
-    if k[0] ==-1e13:
-        k=(np.nan,np.nan,np.nan)
-    return (k[2],k[1],k[0])
+            k=(np.nan,np.nan,np.nan)
+        if k[0] ==-1e13:
+            k=(np.nan,np.nan,np.nan)
+        return (k[2],k[1],k[0])
 
     def getXPEHH(self,x,pos=None,id=None,individuals=None,interpolation=False,verbose=False):
         pos,id,individuals = self._getDefault(pos,id,individuals,singleSite=True)
@@ -1283,10 +1284,11 @@ class mbsData:
         for i,id in enumerate(individualIDs):
             for j,id2 in enumerate(hd):
                 if id == id2:
-                    individualstoKeep.append(j)
+                    individualsToKeep.append(j)
             
 
         #individualsToKeep=[i for i in range(len(hd)) if np.array(hd)[i] in individualIDs]  
+        print "BLA"
         print individualsToKeep
         ls=line.split()
         ht=np.array([ ht[0:3] for ht in np.array(ls)[individualsToKeep]])
